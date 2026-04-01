@@ -1,0 +1,16 @@
+<suite name="UI Automation Suite" parallel="methods" thread-count="3">
+
+    <listeners>
+        <listener class-name="com.atms.reporting.TestListener"/>
+    </listeners>
+
+    <test name="AllTests">
+
+        <classes>
+            <class name="com.atms.tests.SauceDemoTest"/>
+            <class name="com.atms.tests.SampleTest"/>
+        </classes>
+
+    </test>
+
+</suite>

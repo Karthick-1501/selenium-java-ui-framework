@@ -1,0 +1,40 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Logs
+*.log
+
+# Eclipse
+.metadata/
+.classpath
+.project
+.settings/
+bin/
+
+# IntelliJ
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TestNG & Reports
+test-output/
+reports/
+ExtentReport.html
+
+# Screenshots
+*.png
+
+# Drivers
+drivers/
+
+# Temp
+*.tmp
+*.swp
