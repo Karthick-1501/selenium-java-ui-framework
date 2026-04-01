@@ -1,91 +1,157 @@
-# UI Automation Framework 
+# Selenium Java UI Automation Framework
 
-# Overview
-Enterprise-grade UI Automation Framework built using Selenium, Java, and TestNG.
+============================================================
+> Enterprise-grade UI Automation Framework
+> Built with Selenium | Java | TestNG
+============================================================
 
-Designed to solve real-world challenges:
-- Parallel execution issues
-- Flaky tests
-- Reporting clarity
-- UI precision mismatches
+## Overview
 
-# Key Engineering Highlights
+This framework is designed to solve real-world automation challenges:
 
-- ThreadLocal WebDriver (Parallel Safe)
-- Dual-mode Execution (Methods & Classes)
-- Config-driven Framework (No Hardcoding)
-- Retry Mechanism (Environment Controlled)
-- Extent Reports (Class-grouped + Inline Screenshots)
-- Custom Assertion Engine (BigDecimal precision handling)
-- State Isolation (Cookie cleanup per test)
+- Flaky tests due to synchronization issues  
+- Parallel execution conflicts  
+- Poor reporting visibility  
+- Hardcoded configurations  
 
-# Architecture
+Provides a scalable, maintainable, and production-ready solution.
 
-src/
- ├── base → lifecycle handling
- ├── driver → thread-safe driver
- ├── config → property handling
- ├── utils → reusable logic
- ├── pages → POM
- ├── elements → locators
- ├── reporting → listener + extent
- ├── tests → business flows
+------------------------------------------------------------
 
-# Execution Modes
+## Tech Stack
 
-## Class-Level Parallel
-- One browser per class
-- Faster execution
-- Requires state reset
+- Java 17+
+- Selenium WebDriver
+- TestNG
+- WebDriverManager
+- Extent Reports
+- Maven
 
-## Method-Level Parallel
-- One browser per test
-- Fully isolated
-- Slower but stable
+------------------------------------------------------------
 
+## Key Engineering Highlights
 
-# Problem Solving 
+- ThreadLocal WebDriver (Thread-safe execution)
+- Dual Execution Modes (methods & classes)
+- Config-driven framework (no hardcoding)
+- Retry mechanism (property controlled)
+- Centralized Action Engine
+- Custom Assertion Layer
+- Screenshot capture on failure
+- Extent Report integration
 
-## 1. Parallel Execution Failure
-Issue: Driver collision  
-Solution: ThreadLocal WebDriver
+------------------------------------------------------------
 
-## 2. Flaky Tests
-Issue: Element not clickable  
-Solution: Retry + Explicit waits
+## Framework Architecture
 
-## 3. UI Precision Bug
-Issue: 1.00 vs 1.0  
-Solution: BigDecimal assertion engine
+src/test/java/com/atms
 
-## 4. Reporting Chaos
-Issue: Flat reports  
-Solution: Class-level grouping using ConcurrentHashMap
+|-- base            -> BaseTest (lifecycle)
+|-- config          -> ConfigManager
+|-- driver          -> DriverManager (ThreadLocal)
+|-- elements        -> Locators
+|-- pages           -> Page Objects
+|-- reporting       -> Reports + Listener
+|-- tests           -> Test classes
+|-- utils
+    |-- action      -> ActionEngine
+    |-- assertion   -> AssertEngine
+    |-- waits       -> WaitUtils
 
+------------------------------------------------------------
 
-# Reporting
+## Parallel Execution Strategy
 
-- Class → Parent node
-- Methods → Child nodes
-- Screenshots inline
-- Stack trace included
+[ METHOD LEVEL ]
+- Each test runs in separate browser
+- Uses ThreadLocal WebDriver
+- Fully isolated execution
 
-# Covered Scenarios
+parallel="methods"
 
-- Login
-- Cart validation
-- Checkout flow
-- Price verification
+[ CLASS LEVEL ]
+- One browser per test class
+- Shared session within class
 
-# Why I did what I did
+parallel="classes"
 
-This is not demo automation.
+------------------------------------------------------------
 
-This solves:
-- Concurrency issues
-- State leakage
-- Reporting clarity
-- Real UI validation problems
+## How to Run
 
-# Author
-Karthick S | Java | Selenium | TestNG 
+[ Using TestNG ]
+
+Method-level execution:
+- Run testng-methods.xml
+
+Class-level execution:
+- Run testng-classes.xml
+
+[ Using Maven ]
+
+mvn clean test
+
+------------------------------------------------------------
+
+## Environment Configuration
+
+Environment/
+
+|-- execution.properties   -> base URL, retry count
+|-- testdata.properties    -> test data
+
+------------------------------------------------------------
+
+## Sample Test Scenario
+
+Checkout Flow:
+
+1. Login
+2. Add product to cart
+3. Open cart
+4. Validate cart
+5. Proceed to checkout
+6. Validate price
+7. Complete order
+8. Verify confirmation
+
+------------------------------------------------------------
+
+## Reporting
+
+Generated at:
+
+/reports/ExtentReport.html
+
+Includes:
+- Test results
+- Logs
+- Screenshots on failure
+
+------------------------------------------------------------
+
+## Design Decisions
+
+ThreadLocal WebDriver:
+Ensures thread-safe execution in parallel runs.
+
+ActionEngine:
+Centralizes reusable UI actions.
+
+Config-driven approach:
+Supports environment switching without code changes.
+
+------------------------------------------------------------
+
+## Future Enhancements
+
+- CI/CD integration
+- Cross-browser execution
+- Docker support
+- API + UI integration
+
+------------------------------------------------------------
+
+Author: Karthick S
+
+============================================================
