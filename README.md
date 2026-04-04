@@ -1,157 +1,217 @@
-# Selenium Java UI Automation Framework
+# UI Automation Framework
 
-============================================================
-> Enterprise-grade UI Automation Framework
-> Built with Selenium | Java | TestNG
-============================================================
+> Selenium · Java · TestNG · Maven · ExtentReports  
+> Built to solve real parallel execution, flakiness, and reporting problems — not a tutorial clone.
 
-## Overview
+---
 
-This framework is designed to solve real-world automation challenges:
+## What this is
 
-- Flaky tests due to synchronization issues  
-- Parallel execution conflicts  
-- Poor reporting visibility  
-- Hardcoded configurations  
+A production-structured UI test automation framework built on top of Selenium WebDriver (Java), designed for multi-threaded execution without driver collision, config-driven test data, and grouped HTML reporting with inline failure screenshots.
 
-Provides a scalable, maintainable, and production-ready solution.
+Target app: [SauceDemo](https://www.saucedemo.com) — used as a realistic e-commerce test surface covering login → inventory → cart → checkout → order confirmation.
 
-------------------------------------------------------------
+---
 
-## Tech Stack
+## Project Structure
 
-- Java 17+
-- Selenium WebDriver
-- TestNG
-- WebDriverManager
-- Extent Reports
-- Maven
+```
+Ui-Framework/
+├── src/
+│   ├── main/java/com/atms/         ← Framework layer (not test-coupled)
+│   │   ├── base/                   ← BasePage, BaseTest (lifecycle)
+│   │   ├── config/                 ← ConfigManager (property loader)
+│   │   ├── driver/                 ← DriverManager (ThreadLocal WebDriver)
+│   │   ├── elements/               ← Locator constants per page
+│   │   ├── pages/                  ← Page Object classes
+│   │   ├── reporting/              ← ExtentReports listener + singleton
+│   │   └── utils/
+│   │       ├── action/             ← ActionEngine (click, type, getText + retry)
+│   │       ├── assertion/          ← AssertEngine (BigDecimal numeric assert)
+│   │       └── waits/              ← WaitUtils (explicit waits)
+│   └── test/java/com/atms/
+│       └── tests/                  ← Business-flow test classes
+├── Environment/
+│   ├── execution.properties        ← browser, base URL, retry count
+│   └── testdata.properties         ← credentials, form data
+├── reports/                        ← ExtentReport output + screenshots
+├── testng-classes.xml              ← Parallel by class (1 browser/class)
+├── testng-methods.xml              ← Parallel by method (1 browser/test)
+└── pom.xml
+```
 
-------------------------------------------------------------
+---
 
-## Key Engineering Highlights
+## Key Engineering Decisions
 
-- ThreadLocal WebDriver (Thread-safe execution)
-- Dual Execution Modes (methods & classes)
-- Config-driven framework (no hardcoding)
-- Retry mechanism (property controlled)
-- Centralized Action Engine
-- Custom Assertion Layer
-- Screenshot capture on failure
-- Extent Report integration
+### 1. ThreadLocal WebDriver — parallel-safe by design
 
-------------------------------------------------------------
+Standard `static WebDriver` breaks under parallel execution because all threads share the same instance. `DriverManager` wraps the driver in `ThreadLocal<WebDriver>` so each thread gets its own isolated browser session.
 
-## Framework Architecture
+```java
+private static final ThreadLocal<WebDriver> threadLocalDriver = new ThreadLocal<>();
+```
 
-src/test/java/com/atms
+`initDriver()` checks `threadLocalDriver.get() == null` before creating — no double-init even if called multiple times on the same thread. `quitDriver()` calls `threadLocalDriver.remove()` to prevent memory leaks between test runs.
 
-|-- base            -> BaseTest (lifecycle)
-|-- config          -> ConfigManager
-|-- driver          -> DriverManager (ThreadLocal)
-|-- elements        -> Locators
-|-- pages           -> Page Objects
-|-- reporting       -> Reports + Listener
-|-- tests           -> Test classes
-|-- utils
-    |-- action      -> ActionEngine
-    |-- assertion   -> AssertEngine
-    |-- waits       -> WaitUtils
+---
 
-------------------------------------------------------------
+### 2. Dual parallel modes — same codebase, two XML files
 
-## Parallel Execution Strategy
+`BaseTest` detects the active parallel mode at runtime by reading the suite's parallel setting:
 
-[ METHOD LEVEL ]
-- Each test runs in separate browser
-- Uses ThreadLocal WebDriver
-- Fully isolated execution
+```java
+private boolean isMethodParallel() {
+    return org.testng.Reporter.getCurrentTestResult()
+            .getTestContext()
+            .getCurrentXmlTest()
+            .getSuite()
+            .getParallel()
+            .toString()
+            .equalsIgnoreCase("methods");
+}
+```
 
-parallel="methods"
+| Mode | XML | Driver scope | Use when |
+|------|-----|-------------|----------|
+| `parallel="classes"` | `testng-classes.xml` | One browser per class | Tests within a class share state |
+| `parallel="methods"` | `testng-methods.xml` | One browser per method | Full isolation per test |
 
-[ CLASS LEVEL ]
-- One browser per test class
-- Shared session within class
+Lifecycle hooks (`@BeforeClass` / `@BeforeMethod` / `@AfterClass` / `@AfterMethod`) switch automatically — no code change needed between modes.
 
-parallel="classes"
+---
 
-------------------------------------------------------------
+### 3. Config-driven — zero hardcoding in test code
 
-## How to Run
+All environment-specific values live in `Environment/`:
 
-[ Using TestNG ]
+```properties
+# execution.properties
+base.url=https://www.saucedemo.com
+browser=chrome
+retry.count=2
 
-Method-level execution:
-- Run testng-methods.xml
+# testdata.properties
+valid.username=standard_user
+valid.password=secret_sauce
+```
 
-Class-level execution:
-- Run testng-classes.xml
+`ConfigManager` loads both files in a static block and exposes typed accessors. Tests read values via:
 
-[ Using Maven ]
+```java
+ConfigManager.getExecution("base.url");
+ConfigManager.getTestData("valid.username");
+```
 
-mvn clean test
+Swapping environments = editing one `.properties` file.
 
-------------------------------------------------------------
+---
 
-## Environment Configuration
+### 4. ActionEngine with configurable retry
 
-Environment/
+UI interactions fail transiently — element not yet clickable, brief DOM re-render, network lag. ActionEngine wraps `click()` with a retry loop driven by `retry.count` from config:
 
-|-- execution.properties   -> base URL, retry count
-|-- testdata.properties    -> test data
+```java
+while (attempts < MAX_ATTEMPTS) {
+    try {
+        WaitUtils.waitForClickable(target);
+        driver.findElement(target).click();
+        return;
+    } catch (Exception e) {
+        attempts++;
+        if (attempts == MAX_ATTEMPTS) throw new RuntimeException(...);
+    }
+}
+```
 
-------------------------------------------------------------
+Retry kicks in only when the element genuinely fails — not as a lazy fallback for bad locators. Explicit waits (`WebDriverWait`) run first inside every action before any retry.
 
-## Sample Test Scenario
+Locator strategy is prefix-encoded:
 
-Checkout Flow:
+```java
+"id=login-button"          // → By.id
+"css=.shopping_cart_badge" // → By.cssSelector
+"xpath=//div[@class='..."] // → By.xpath
+```
 
-1. Login
-2. Add product to cart
-3. Open cart
-4. Validate cart
-5. Proceed to checkout
-6. Validate price
-7. Complete order
-8. Verify confirmation
+---
 
-------------------------------------------------------------
+### 5. Custom numeric assertion — BigDecimal precision
 
-## Reporting
+TestNG's `assertEquals("1.00", "1.0")` fails. The UI renders prices as `"$29.99"` or `"1.00"` depending on context. Standard string comparison is unreliable here.
 
-Generated at:
+`AssertEngine.assertDoubleEquals()` strips currency symbols in the caller, then normalizes both sides via `BigDecimal.compareTo()` — which ignores trailing zeros:
 
-/reports/ExtentReport.html
+```java
+BigDecimal actual   = new BigDecimal("28.990");  // from UI
+BigDecimal expected = BigDecimal.valueOf(28.99);
+actual.compareTo(expected) == 0                  // → true
+```
 
-Includes:
-- Test results
-- Logs
-- Screenshots on failure
+This is the same precision approach used in financial and tax calculation testing, where `1.00 ≠ 1.0` as strings but must be treated as equal.
 
-------------------------------------------------------------
+---
 
-## Design Decisions
+### 6. Class-grouped Extent reporting with thread safety
 
-ThreadLocal WebDriver:
-Ensures thread-safe execution in parallel runs.
+Flat Extent reports dump every test as a top-level node — unreadable at scale. `TestListener` groups test methods under their parent class using `ConcurrentHashMap`:
 
-ActionEngine:
-Centralizes reusable UI actions.
+```java
+ExtentTest parent = classNodeMap.computeIfAbsent(
+    className,
+    name -> ReportManager.getReport().createTest(name)
+);
+ExtentTest child = parent.createNode(methodName);
+```
 
-Config-driven approach:
-Supports environment switching without code changes.
+`computeIfAbsent` is atomic — no race condition when multiple threads try to create the same parent node simultaneously. `ThreadLocal<ExtentTest> testNode` keeps each thread's active node isolated.
 
-------------------------------------------------------------
+On failure, a screenshot is captured immediately, saved to `reports/screenshots/`, and embedded inline in the report with the stack trace.
 
-## Future Enhancements
+`ReportManager.getReport()` is `synchronized` to prevent double-initialization of `ExtentReports` under parallel startup.
 
-- CI/CD integration
-- Cross-browser execution
-- Docker support
-- API + UI integration
+---
 
-------------------------------------------------------------
+## Running Tests
 
-Author: Karthick S
+**Prerequisites:** Java 17+, Maven 3.8+, Chrome installed
 
-============================================================
+```bash
+# Class-parallel (default — faster)
+mvn test -DsuiteXmlFile=testng-classes.xml
+
+# Method-parallel (fully isolated)
+mvn test -DsuiteXmlFile=testng-methods.xml
+```
+
+Report generated at `reports/ExtentReport.html` after each run.
+
+---
+
+## Test Coverage
+
+| Test | Flow |
+|------|------|
+| `launchUrl` | Smoke — verifies base URL loads correctly |
+| `login` | Credential entry → successful login |
+| `cartFlow` | Add item → assert cart badge count → remove item |
+| `verifyCheckoutFlow` | Full flow: login → add → cart → checkout → confirm |
+| `verifyCheckoutPriceAssert` | Same flow with explicit price assertion via `AssertEngine` |
+
+---
+
+## Dependencies
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| selenium-java | 4.21.0 | WebDriver core |
+| testng | 7.10.2 | Test runner + parallel execution |
+| webdrivermanager | 5.8.0 | Automatic ChromeDriver binary management |
+| extentreports | 5.1.1 | HTML reporting |
+
+---
+
+## Author
+
+**Karthick S** — Automation Test Engineer / SDET  
+[LinkedIn](https://linkedin.com/in/karthicks1520) · Chennai, India

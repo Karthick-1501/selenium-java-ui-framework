@@ -1,3 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+<!-- Class-parallel mode: one browser per test class -->
 <suite name="UI Automation Suite" parallel="classes" thread-count="3">
 
     <listeners>
@@ -5,12 +9,10 @@
     </listeners>
 
     <test name="AllTests">
-
         <classes>
             <class name="com.atms.tests.SauceDemoTest"/>
             <class name="com.atms.tests.SampleTest"/>
         </classes>
-
     </test>
 
 </suite>

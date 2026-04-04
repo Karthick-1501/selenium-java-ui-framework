@@ -28,7 +28,6 @@
             <groupId>org.testng</groupId>
             <artifactId>testng</artifactId>
             <version>7.10.2</version>
-            <scope>test</scope>
         </dependency>
 
         <!-- WebDriverManager -->
@@ -44,16 +43,15 @@
             <artifactId>extentreports</artifactId>
             <version>5.1.1</version>
         </dependency>
-        <dependency>
-            <groupId>org.testng</groupId>
-            <artifactId>testng</artifactId>
-            <version>7.10.2</version>
-            <scope>compile</scope>
-        </dependency>
 
     </dependencies>
 
     <build>
+        <!-- Include framework source from src/main/java -->
+        <sourceDirectory>src/main/java</sourceDirectory>
+        <!-- Include test source from src/test/java -->
+        <testSourceDirectory>src/test/java</testSourceDirectory>
+
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -61,7 +59,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <suiteXmlFiles>
-                        <suiteXmlFile>testng.xml</suiteXmlFile>
+                        <suiteXmlFile>testng-classes.xml</suiteXmlFile>
                     </suiteXmlFiles>
                 </configuration>
             </plugin>
