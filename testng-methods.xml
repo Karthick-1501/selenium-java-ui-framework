@@ -10,7 +10,7 @@
     <test name="AllTests">
         <classes>
             <class name="com.atms.tests.SauceDemoTest"/>
-            <class name="com.atms.tests.SampleTest"/>
+            <class name="com.atms.tests.AddToCartTest"/>
         </classes>
     </test>
 
