@@ -18,14 +18,15 @@ public class SauceDemoTest extends BaseTest {
     private final String firstname = ConfigManager.getTestData("firstname");
     private final String lastname  = ConfigManager.getTestData("lastname");
     private final String postcode  = ConfigManager.getTestData("postcode");
+    private final String item1     = ConfigManager.getTestData("item1");
 
-    private final BasePage              basePage     = new BasePage();
-    private final LoginPage             loginPage    = new LoginPage();
-    private final InventoryPage         inventoryPage = new InventoryPage();
-    private final CartPage              cartPage      = new CartPage();
-    private final CheckoutPage          checkoutPage  = new CheckoutPage();
-    private final CheckoutOverviewPage  overviewPage  = new CheckoutOverviewPage();
-    private final CheckoutCompletePage  completePage  = new CheckoutCompletePage();
+    private final BasePage             basePage      = new BasePage();
+    private final LoginPage            loginPage     = new LoginPage();
+    private final InventoryPage        inventoryPage = new InventoryPage();
+    private final CartPage             cartPage      = new CartPage();
+    private final CheckoutPage         checkoutPage  = new CheckoutPage();
+    private final CheckoutOverviewPage overviewPage  = new CheckoutOverviewPage();
+    private final CheckoutCompletePage completePage  = new CheckoutCompletePage();
 
     @Test
     public void login() {
@@ -47,46 +48,27 @@ public class SauceDemoTest extends BaseTest {
     }
 
     @Test
-    public void verifyCheckoutPriceAssert() {
-        basePage.launchApplication();
-        loginPage.login(username, password);
-        inventoryPage.addBackpackToCart();
-        inventoryPage.openCart();
-
-        Assert.assertTrue(cartPage.isRemoveButtonPresent(), "Remove button not present in cart!");
-
-        cartPage.clickCheckout();
-        checkoutPage.enterDetails(firstname, lastname, postcode);
-        checkoutPage.clickContinue();
-
-        String price = overviewPage.getItemPrice();
-        AssertEngine.assertDoubleEquals(price.replace("$", ""), 28.99);
-
-        overviewPage.clickFinish();
-
-        String message = completePage.getConfirmationMessage();
-        Assert.assertTrue(message.contains("Thank you"), "Order completion message not displayed!");
-    }
-
-    @Test
     public void verifyCheckoutFlow() {
         basePage.launchApplication();
         loginPage.login(username, password);
-        inventoryPage.addBackpackToCart();
+        inventoryPage.addItem(item1);
         inventoryPage.openCart();
 
-        Assert.assertTrue(cartPage.isRemoveButtonPresent(), "Remove button not present in cart!");
+        Assert.assertTrue(cartPage.isRemoveButtonPresent(), "Remove button not present in cart");
 
         cartPage.clickCheckout();
         checkoutPage.enterDetails(firstname, lastname, postcode);
         checkoutPage.clickContinue();
 
-        String price = overviewPage.getItemPrice();
-        AssertEngine.assertDoubleEquals(price.replace("$", ""), 29.99);
+        String itemPrice = overviewPage.getItemPrice();
+        AssertEngine.assertDoubleEquals(
+                itemPrice.replace("$", ""),
+                Double.parseDouble(ConfigManager.getTestData("backpack.price"))
+        );
 
         overviewPage.clickFinish();
 
         String message = completePage.getConfirmationMessage();
-        Assert.assertTrue(message.contains("Thank you"), "Order completion message not displayed!");
+        Assert.assertTrue(message.contains("Thank you"), "Order completion message not displayed");
     }
 }

@@ -46,7 +46,7 @@ If an unknown item name is passed, `addItem()` throws immediately:
 public void addItem(String itemName) {
     String locator = ITEM_MAP.get(itemName);
     if (locator == null) {
-        throw new RuntimeException("Invalid item: " + itemName);
+        throw new RuntimeException("Unknown item name in ITEM_MAP: " + itemName);
     }
     click(locator);
 }
@@ -58,30 +58,27 @@ public void addItem(String itemName) {
 
 ## Price Collection — getAllItemPrices()
 
-Reads every price element from the inventory page and returns them as a `List<BigDecimal>`:
+Reads every price element from the inventory page and returns them as a `List<BigDecimal>`. Uses `ActionEngine.getTexts()` so the page never calls `driver.findElements()` directly:
 
 ```java
 public List<BigDecimal> getAllItemPrices() {
-    List<WebElement> priceElements =
-        DriverManager.getDriver().findElements(InventoryElements.PRICE_LIST);
-
+    List<String> rawPrices = ActionEngine.getTexts(InventoryElements.PRICE_LIST);
     List<BigDecimal> prices = new ArrayList<>();
-    for (WebElement el : priceElements) {
-        String clean = el.getText().replace("$", "");  // "$29.99" → "29.99"
-        prices.add(new BigDecimal(clean));
+    for (String raw : rawPrices) {
+        prices.add(new BigDecimal(raw.replace("$", "")));
     }
     return prices;
 }
 ```
 
-The locator `[data-test='inventory-item-price']` is a `By` object (not a string prefix), stored directly in `InventoryElements` for multi-element collection:
+The locator is a standard string-prefixed constant in `InventoryElements`:
 
 ```java
 // InventoryElements.java
-public static By PRICE_LIST = By.cssSelector("[data-test='inventory-item-price']");
+public static final String PRICE_LIST = "css=[data-test='inventory-item-price']";
 ```
 
-This is intentional — `ActionEngine.getText()` handles single elements via string locators. Multi-element collection needs `findElements()` directly, which takes `By`.
+`ActionEngine.getTexts()` handles multi-element collection internally — all WebDriver interaction stays inside the engine.
 
 ---
 
@@ -106,5 +103,6 @@ public BigDecimal sumPrices(List<BigDecimal> prices) {
 | Test | Usage |
 |------|-------|
 | `AddToCartTest.addItemsToCart` | `addItem()` × 6 to verify all items can be added |
-| `AddToCartTest.subtotalvalidation` | `getAllItemPrices()` + `sumPrices()` to compute expected subtotal |
+| `AddToCartTest.subtotalValidation` | `getAllItemPrices()` + `sumPrices()` to compute expected subtotal |
+| `AddToCartTest.validateTax` / `validateTaxAllItems` | `addItem()` for cart setup before DB-driven tax assertion |
 | `SauceDemoTest.*` | `addBackpackToCart()`, `openCart()`, `getCartCount()` |

@@ -1,12 +1,12 @@
 # UI Automation Framework
 
-> Selenium · Java 17 · TestNG · Maven · ExtentReports
+> Selenium · Java 17 · TestNG · Maven · ExtentReports · PostgreSQL
 
 ---
 
 ## What This Is
 
-A UI test automation framework built on SauceDemo — an e-commerce app covering login, inventory, cart, checkout, and order confirmation. The target was to solve actual parallel execution and flakiness problems, not just wrap Selenium in a Page Object pattern and call it a framework.
+A UI test automation framework built on SauceDemo — an e-commerce app covering login, inventory, cart, checkout, and order confirmation. The target was to solve actual parallel execution, flakiness, and financial assertion problems, not just wrap Selenium in a Page Object pattern and call it a framework.
 
 The things that make this worth looking at:
 
@@ -14,6 +14,7 @@ The things that make this worth looking at:
 - Two parallel modes (class-level and method-level) from the same codebase — the active mode is detected at runtime, no code changes needed
 - `ActionEngine` is the only place `driver.findElement()` is called — retry logic and explicit waits live there, not scattered across page classes
 - `AssertEngine` uses `BigDecimal.compareTo()` instead of string equality — no false failures from UI rendering `"1.00"` vs `"1.0"`
+- DB-driven tax validation — tax rate fetched from PostgreSQL, computed in Java, asserted against the live UI with `BigDecimal` precision
 - `TestListener` uses `ConcurrentHashMap.computeIfAbsent()` for thread-safe class-grouped reporting
 - Everything environment-specific lives in two `.properties` files
 
@@ -45,7 +46,8 @@ selenium-java-ui-framework/
 │   │   │   ├── CartPage.java
 │   │   │   ├── CheckoutPage.java
 │   │   │   ├── CheckoutOverviewPage.java ← UI subtotal reader + BigDecimal parsing
-│   │   │   └── CheckoutCompletePage.java
+│   │   │   ├── CheckoutCompletePage.java
+│   │   │   └── TaxPage.java             ← DB query, tax calculation, UI tax reader
 │   │   ├── reporting/
 │   │   │   ├── ReportManager.java       ← ExtentReports singleton (synchronized init)
 │   │   │   └── TestListener.java        ← ITestListener, class-grouped report, thread-safe
@@ -54,16 +56,18 @@ selenium-java-ui-framework/
 │   │       │   └── ActionEngine.java    ← Every WebDriver interaction + configurable retry
 │   │       ├── assertion/
 │   │       │   └── AssertEngine.java    ← BigDecimal numeric assertions
+│   │       ├── db/
+│   │       │   └── DBUtils.java         ← PostgreSQL connection factory
 │   │       └── waits/
 │   │           └── WaitUtils.java       ← Explicit wait wrappers
 │   └── test/java/com/atms/
 │       └── tests/
 │           ├── SauceDemoTest.java        ← Core checkout and cart tests
-│           ├── AddToCartTest.java        ← Multi-item cart + subtotal validation
+│           ├── AddToCartTest.java        ← Multi-item cart, subtotal + tax validation
 │           └── SampleTest.java          ← Smoke test
 ├── Environment/
-│   ├── execution.properties             ← browser, base URL, retry count
-│   └── testdata.properties             ← credentials, item names, form data
+│   ├── execution.properties             ← browser, base URL, retry count, DB credentials
+│   └── testdata.properties             ← credentials, item names, form data, item prices
 ├── docs/
 │   ├── architecture.md                  ← Layer responsibilities + dependency flow
 │   ├── action-engine.md                 ← Locator strategy, retry internals, why not PageFactory
@@ -71,9 +75,10 @@ selenium-java-ui-framework/
 │   ├── parallel-execution.md            ← ThreadLocal, dual modes, memory safety
 │   ├── extent-report.md                 ← Class-grouped hierarchy, thread-safe parent creation
 │   ├── retry-mechanism.md               ← What gets retried, what doesn't, and why
+│   ├── db-layer.md                      ← DBUtils, TaxPage, schema design, tax calculation
 │   ├── page-inventory.md                ← Item map pattern, price collection, sumPrices()
 │   ├── page-checkout-overview.md        ← getUISubtotal() parsing + BigDecimal rationale
-│   └── test-add-to-cart.md              ← subtotalvalidation flow explained
+│   └── test-add-to-cart.md              ← subtotalValidation and validateTax flows explained
 ├── reports/                             ← ExtentReport.html + screenshots/ (gitignored)
 ├── testng-classes.xml                   ← parallel="classes" — one browser per class
 ├── testng-methods.xml                   ← parallel="methods" — one browser per test
@@ -84,7 +89,7 @@ selenium-java-ui-framework/
 
 ## Quick Start
 
-**Prerequisites:** Java 17+, Maven 3.8+, Chrome installed
+**Prerequisites:** Java 17+, Maven 3.8+, Chrome installed, PostgreSQL running with `at-db` database
 
 ```bash
 git clone https://github.com/Karthick-1501/selenium-java-ui-framework.git
@@ -108,6 +113,10 @@ Report lands at `reports/ExtentReport.html` after each run.
 browser=chrome
 base.url=https://www.saucedemo.com
 retry.count=2
+
+db.url=jdbc:postgresql://localhost:5432/at-db
+db.username=postgres
+db.password=root
 ```
 
 `Environment/testdata.properties`
@@ -124,6 +133,8 @@ item3=Sauce Labs T-Shirt
 item4=Sauce Labs Jacket
 item5=Sauce Labs Onesie
 item6=Test all
+
+backpack.price=29.99
 ```
 
 Switching environments means editing these two files. Nothing else.
@@ -136,24 +147,12 @@ Switching environments means editing these two files. Nothing else.
 |-------|------|----------------|
 | `SampleTest` | `launchUrl` | Smoke — URL loads and contains `saucedemo` |
 | `SauceDemoTest` | `login` | Credential entry → successful login |
-| `SauceDemoTest` | `cartFlow` | Add item → assert cart badge count → remove |
-| `SauceDemoTest` | `verifyCheckoutPriceAssert` | Full flow with explicit `$29.99` price assertion |
-| `SauceDemoTest` | `verifyCheckoutFlow` | Full flow: login → add → cart → checkout → confirm |
+| `SauceDemoTest` | `cartFlow` | Add backpack → assert cart badge count → remove |
+| `SauceDemoTest` | `verifyCheckoutFlow` | Full flow: login → add → cart → checkout → confirm + price assertion |
 | `AddToCartTest` | `addItemsToCart` | Add all 6 inventory items via name-driven `addItem()` |
-| `AddToCartTest` | `subtotalvalidation` | Collect prices from inventory DOM → assert against checkout overview subtotal |
-
-### How subtotalvalidation works
-
-This test doesn't hardcode an expected total. It calculates what the subtotal should be from the UI itself:
-
-1. Adds all 6 items to cart
-2. Reads every `[data-test='inventory-item-price']` element from the inventory DOM
-3. Strips `$`, parses each to `BigDecimal`, sums with `RoundingMode.HALF_UP`
-4. Goes through cart → checkout → enter details → continue
-5. Reads the `Item total:` label on the Checkout Overview page
-6. Asserts calculated sum == displayed subtotal via `BigDecimal.compareTo()`
-
-If SauceDemo changes a price, the test still passes. If their backend subtotal doesn't match the sum of the displayed prices, it fails — which is the actual bug worth catching.
+| `AddToCartTest` | `subtotalValidation` | Collect prices from inventory DOM → sum → assert against checkout overview subtotal |
+| `AddToCartTest` | `validateTax` | Single item: fetch tax rate from DB → compute expected → assert against UI tax label |
+| `AddToCartTest` | `validateTaxAllItems` | All 6 items: same DB-driven tax validation against the full cart subtotal |
 
 ---
 
@@ -209,7 +208,37 @@ Nothing outside `ActionEngine` calls `driver.findElement()`. Every interaction g
 
 `click()` retries up to `retry.count` (from config). `waitForClickable()` runs before each attempt — not just the first. An unsupported prefix throws immediately with the full locator string in the message.
 
+`getTexts(locator)` supports multi-element collection without bypassing ActionEngine — used by `InventoryPage.getAllItemPrices()` to read all price labels in one call.
+
 → [`docs/action-engine.md`](docs/action-engine.md) · [`docs/retry-mechanism.md`](docs/retry-mechanism.md)
+
+---
+
+### DB-Driven Tax Validation
+
+Tax rates are not hardcoded. `TaxPage.fetchTaxPercent()` queries PostgreSQL using a JOIN across three schemas:
+
+```sql
+SELECT t.tx_rt
+FROM product.id_itm p
+JOIN classification.cls_cd c ON p.id_itm = c.itm_id
+JOIN tax.tx_cfg t ON c.cl_cd = t.cl_cd
+WHERE p.name = ?
+```
+
+The rate is returned and passed to `calculateTax()`, which uses `BigDecimal` arithmetic:
+
+```java
+public BigDecimal calculateTax(BigDecimal subtotal, double percent) {
+    return subtotal
+        .multiply(BigDecimal.valueOf(percent))
+        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+}
+```
+
+The test then asserts the computed expected tax against what the UI displays — all in `BigDecimal` via `AssertEngine.assertBigDecimalEquals()`.
+
+→ [`docs/db-layer.md`](docs/db-layer.md)
 
 ---
 
@@ -221,7 +250,7 @@ Nothing outside `ActionEngine` calls `driver.findElement()`. Every interaction g
 new BigDecimal("28.990").compareTo(BigDecimal.valueOf(28.99)) == 0  // ✅ true
 ```
 
-This is the same approach used in financial system testing where trailing-zero differences between stored and displayed values are expected and shouldn't cause failures.
+For monetary comparisons where both sides are already `BigDecimal` (tax, subtotal), `AssertEngine.assertBigDecimalEquals()` uses `.compareTo()` directly, avoiding any lossy conversion through `double`.
 
 → [`docs/assert-engine.md`](docs/assert-engine.md)
 
@@ -238,7 +267,9 @@ Flat Extent reports dump every test as a top-level node — unreadable at any sc
    ❌ verifyCheckoutFlow  → stack trace + screenshot embedded
 📁 AddToCartTest
    ✅ addItemsToCart
-   ✅ subtotalvalidation
+   ✅ subtotalValidation
+   ✅ validateTax
+   ✅ validateTaxAllItems
 ```
 
 Each thread's active node is kept in `ThreadLocal<ExtentTest>` so `onTestSuccess` and `onTestFailure` always write to the correct node.
@@ -255,6 +286,7 @@ Each thread's active node is kept in `ThreadLocal<ExtentTest>` so `onTestSuccess
 | `testng` | 7.10.2 | Test runner + parallel execution |
 | `webdrivermanager` | 5.8.0 | Automatic ChromeDriver binary management |
 | `extentreports` | 5.1.1 | HTML reporting |
+| `postgresql` | 42.7.3 | JDBC driver for DB-driven validation |
 
 ---
 
@@ -263,14 +295,15 @@ Each thread's active node is kept in `ThreadLocal<ExtentTest>` so `onTestSuccess
 | File | What it covers |
 |------|----------------|
 | [`docs/architecture.md`](docs/architecture.md) | Layer responsibilities, dependency flow, why `src/main` vs `src/test` |
-| [`docs/action-engine.md`](docs/action-engine.md) | Locator strategy, retry internals, why not PageFactory |
-| [`docs/assert-engine.md`](docs/assert-engine.md) | BigDecimal vs Double, usage examples |
+| [`docs/action-engine.md`](docs/action-engine.md) | Locator strategy, retry internals, `getTexts()`, why not PageFactory |
+| [`docs/assert-engine.md`](docs/assert-engine.md) | BigDecimal vs Double, `assertDoubleEquals` vs `assertBigDecimalEquals` |
 | [`docs/parallel-execution.md`](docs/parallel-execution.md) | ThreadLocal deep dive, dual modes, memory safety |
 | [`docs/extent-report.md`](docs/extent-report.md) | Class-grouped hierarchy, thread-safe node creation, failure handling |
 | [`docs/retry-mechanism.md`](docs/retry-mechanism.md) | What gets retried, what doesn't, and why |
+| [`docs/db-layer.md`](docs/db-layer.md) | DBUtils, TaxPage, schema design, tax calculation, full assertion flow |
 | [`docs/page-inventory.md`](docs/page-inventory.md) | Item map pattern, price collection, sumPrices() |
 | [`docs/page-checkout-overview.md`](docs/page-checkout-overview.md) | getUISubtotal() parsing, BigDecimal rationale |
-| [`docs/test-add-to-cart.md`](docs/test-add-to-cart.md) | subtotalvalidation flow explained end to end |
+| [`docs/test-add-to-cart.md`](docs/test-add-to-cart.md) | subtotalValidation and validateTax flows explained end to end |
 
 ---
 

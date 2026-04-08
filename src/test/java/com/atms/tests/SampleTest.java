@@ -1,5 +1,6 @@
 package com.atms.tests;
 
+import com.atms.base.BasePage;
 import com.atms.base.BaseTest;
 import com.atms.config.ConfigManager;
 import com.atms.driver.DriverManager;
@@ -11,10 +12,11 @@ import org.testng.annotations.Test;
 @Listeners(TestListener.class)
 public class SampleTest extends BaseTest {
 
+    private final BasePage basePage = new BasePage();
+
     @Test
     public void launchUrl() {
-        String url = ConfigManager.getExecution("base.url");
-        DriverManager.getDriver().get(url);
+        basePage.launchApplication();
         String currentUrl = DriverManager.getDriver().getCurrentUrl();
         Assert.assertTrue(currentUrl.contains("saucedemo"), "Launch URL verification failed. Got: " + currentUrl);
     }

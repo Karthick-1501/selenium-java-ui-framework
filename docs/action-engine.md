@@ -64,11 +64,47 @@ Why retry on `click()` but not blindly on `type()`?
 
 ## Methods
 
-| Method | Wait applied | Retry |
-|--------|-------------|-------|
-| `click(locator)` | `waitForClickable` | Yes — `retry.count` from config |
-| `type(locator, value)` | `waitForVisible` | Yes — hardcoded 2 |
-| `getText(locator)` | `waitForVisible` | No — read-only, idempotent |
+| Method | Wait applied | Retry | Notes |
+|--------|-------------|-------|-------|
+| `click(locator)` | `waitForClickable` | Yes — `retry.count` from config | Primary interaction method |
+| `type(locator, value)` | `waitForVisible` | Yes — hardcoded 2 | Clears before typing |
+| `getText(locator)` | `waitForVisible` | No | Read-only, idempotent |
+| `getTexts(locator)` | `waitForVisible` | No | Multi-element — returns `List<String>` |
+| `isDisplayed(locator)` | `waitForVisible` | No | Returns `false` on exception, not throw |
+
+### getTexts(locator)
+
+Added to support multi-element reads without bypassing `ActionEngine`. Used by `InventoryPage.getAllItemPrices()` to collect all price labels on the page:
+
+```java
+public static List<String> getTexts(String locator) {
+    By target = getBy(locator);
+    WaitUtils.waitForVisible(target);
+    return DriverManager.getDriver().findElements(target).stream()
+            .map(el -> el.getText().trim())
+            .collect(Collectors.toList());
+}
+```
+
+This keeps `InventoryPage` free of any direct `WebElement` or `DriverManager` imports.
+
+### isDisplayed(locator)
+
+Returns `false` cleanly when an element is absent, rather than throwing after a full wait timeout:
+
+```java
+public static boolean isDisplayed(String locator) {
+    try {
+        By target = getBy(locator);
+        WaitUtils.waitForVisible(target);
+        return DriverManager.getDriver().findElement(target).isDisplayed();
+    } catch (Exception e) {
+        return false;
+    }
+}
+```
+
+Used by `CartPage.isRemoveButtonPresent()` so presence checks fail fast rather than waiting out the full explicit wait timeout.
 
 ---
 

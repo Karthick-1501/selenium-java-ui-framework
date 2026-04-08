@@ -6,6 +6,9 @@ import com.atms.utils.waits.WaitUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 /**
  * Centralized action handler for all WebDriver interactions.
  *
@@ -60,6 +63,24 @@ public class ActionEngine {
         By target = getBy(locator);
         WaitUtils.waitForVisible(target);
         return DriverManager.getDriver().findElement(target).getText().trim();
+    }
+
+    public static List<String> getTexts(String locator) {
+        By target = getBy(locator);
+        WaitUtils.waitForVisible(target);
+        return DriverManager.getDriver().findElements(target).stream()
+                .map(el -> el.getText().trim())
+                .collect(Collectors.toList());
+    }
+
+    public static boolean isDisplayed(String locator) {
+        try {
+            By target = getBy(locator);
+            WaitUtils.waitForVisible(target);
+            return DriverManager.getDriver().findElement(target).isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static By getBy(String locator) {

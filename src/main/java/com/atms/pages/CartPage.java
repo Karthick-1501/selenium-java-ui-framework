@@ -6,12 +6,7 @@ import com.atms.utils.action.ActionEngine;
 public class CartPage {
 
     public boolean isRemoveButtonPresent() {
-        try {
-            ActionEngine.getText(CartElements.REMOVE_BUTTON);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
+        return ActionEngine.isDisplayed(CartElements.REMOVE_BUTTON);
     }
 
     public void clickRemoveButton() {
