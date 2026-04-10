@@ -38,13 +38,20 @@ public class DBUtils {
 }
 ```
 
-Connection credentials are read from `execution.properties` on every call — lazy, not cached as static fields. This avoids a class-load-time failure if the DB isn't reachable when the JVM starts.
+Connection credentials are read from `execution.properties` at runtime — the actual values come from `.env` (gitignored). This avoids committing any environment-specific config to source control.
 
-`execution.properties`:
+`execution.properties` (committed — no secrets):
 ```properties
-db.url=jdbc:postgresql://localhost:5432/at-db
-db.username=postgres
-db.password=root
+db.url=${DB_URL}
+db.username=${DB_USERNAME}
+db.password=${DB_PASSWORD}
+```
+
+`.env` (gitignored — real values live here):
+```env
+DB_URL=jdbc:postgresql://localhost:5432/your-db
+DB_USERNAME=your_user
+DB_PASSWORD=your_password
 ```
 
 Connections are opened with `try-with-resources` in the caller (`TaxPage`) — they close automatically after the query completes.
@@ -53,15 +60,34 @@ Connections are opened with `try-with-resources` in the caller (`TaxPage`) — t
 
 ## Database Schema
 
-The tax system spans three schemas, each with a focused responsibility:
+The tax system spans three schemas, each with a focused responsibility. The actual schema and table names are not stored in source code — they are configured via `.env` and resolved at runtime through `ConfigManager`.
 
 ```
-product.id_itm          → item master (id, name, description)
-classification.cls_cd   → maps items to classification codes
-tax.tx_cfg              → maps classification codes to tax rates
+product schema      → item master (id, name, description)
+classification schema → maps items to classification codes
+tax schema          → maps classification codes to tax rates
 ```
 
-This separation is deliberate — the same tax rate applies to all items in a classification. Adding a new item means inserting a row in `product.id_itm` and mapping it to an existing classification. The tax rate is inherited, not duplicated per item.
+This separation is deliberate — the same tax rate applies to all items in a classification. Adding a new item means inserting into the product table and mapping it to an existing classification. The tax rate is inherited, not duplicated per item.
+
+Configure your schema and table names in `.env`:
+```env
+DB_TABLE_PRODUCT=your_product_schema.your_product_table
+DB_TABLE_CLASSIFICATION=your_classification_schema.your_classification_table
+DB_TABLE_TAX=your_tax_schema.your_tax_table
+```
+
+Configure your column names in `.env`:
+```env
+DB_COL_TAX_RATE=your_tax_rate_column
+DB_COL_PRODUCT_ID=your_product_id_column
+DB_COL_CLASSIFICATION_ITEM_ID=your_classification_item_id_column
+DB_COL_CLASSIFICATION_CODE=your_classification_code_column
+DB_COL_TAX_CODE=your_tax_code_column
+DB_COL_PRODUCT_NAME=your_product_name_column
+```
+
+See `.env.example` for the full list of keys.
 
 ---
 
@@ -69,19 +95,36 @@ This separation is deliberate — the same tax rate applies to all items in a cl
 
 ### fetchTaxPercent(String itemName)
 
-Joins across all three schemas to retrieve the tax rate for a given item name:
+Loads table and column names from `ConfigManager` at runtime, then builds and executes a JOIN across all three schemas to retrieve the tax rate for a given item:
 
 ```java
-String query = """
-    SELECT t.tx_rt
-    FROM product.id_itm p
-    JOIN classification.cls_cd c ON p.id_itm = c.itm_id
-    JOIN tax.tx_cfg t ON c.cl_cd = t.cl_cd
-    WHERE p.name = ?
-""";
+String productTable        = ConfigManager.getExecution("db.table.product");
+String classificationTable = ConfigManager.getExecution("db.table.classification");
+String taxTable            = ConfigManager.getExecution("db.table.tax");
+
+String colTaxRate     = ConfigManager.getExecution("db.col.tax.rate");
+String colProductId   = ConfigManager.getExecution("db.col.product.id");
+String colClassItemId = ConfigManager.getExecution("db.col.classification.item.id");
+String colClassCode   = ConfigManager.getExecution("db.col.classification.code");
+String colTaxCode     = ConfigManager.getExecution("db.col.tax.code");
+String colProductName = ConfigManager.getExecution("db.col.product.name");
+
+String query = String.format("""
+    SELECT t.%s
+    FROM %s p
+    JOIN %s c ON p.%s = c.%s
+    JOIN %s t ON c.%s = t.%s
+    WHERE p.%s = ?
+""", colTaxRate,
+     productTable,
+     classificationTable, colProductId, colClassItemId,
+     taxTable, colClassCode, colTaxCode,
+     colProductName);
 ```
 
-Uses a `PreparedStatement` with a parameterised `?` — no string concatenation, no SQL injection risk. Returns `0` if no row is found, which will produce a zero tax expectation and surface as a test failure rather than a silent pass.
+No table names, column names, or schema identifiers appear as string literals in the committed code. The query structure is visible; the identifiers are not.
+
+Uses a `PreparedStatement` with a parameterised `?` for the item name — no string concatenation, no SQL injection risk. Returns `0` if no row is found, which produces a zero tax expectation and surfaces as a test failure rather than a silent pass.
 
 ### calculateTax(BigDecimal subtotal, double percent)
 
@@ -98,7 +141,7 @@ The formula is exclusive tax — applied on top of the subtotal. `RoundingMode.H
 **Why not `double` math?**
 
 ```java
-//  floating-point trap
+// floating-point trap
 double tax = 109.94 * 8.0 / 100;  // → 8.795199999999999
 Math.round(tax * 100.0) / 100.0;   // → 8.8 — looks right, but fragile
 ```
@@ -122,16 +165,16 @@ Reads the `[data-test='tax-label']` element via `ActionEngine`, strips the label
 
 ```java
 // 1. Navigate to checkout overview
-BigDecimal subtotal   = overviewPage.getUISubtotal();     // "Item total: $29.99" → BigDecimal
+BigDecimal subtotal    = overviewPage.getUISubtotal();     // "Item total: $29.99" → BigDecimal
 
-// 2. Fetch tax rate from DB
-double taxPercent     = taxPage.fetchTaxPercent(item1);   // e.g. 8.0
+// 2. Fetch tax rate from DB (table/column names come from .env at runtime)
+double taxPercent      = taxPage.fetchTaxPercent(item1);   // e.g. 8.0
 
 // 3. Compute expected tax using BigDecimal arithmetic
 BigDecimal expectedTax = taxPage.calculateTax(subtotal, taxPercent);  // → 2.40
 
 // 4. Read actual tax from UI
-BigDecimal uiTax      = taxPage.getUITax();               // "Tax: $2.40" → BigDecimal
+BigDecimal uiTax       = taxPage.getUITax();               // "Tax: $2.40" → BigDecimal
 
 // 5. Assert — scale-safe, no double conversion
 AssertEngine.assertBigDecimalEquals(uiTax, expectedTax, "Tax mismatch");

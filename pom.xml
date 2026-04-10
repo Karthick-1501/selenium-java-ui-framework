@@ -44,6 +44,13 @@
             <version>5.1.1</version>
         </dependency>
         
+        <!-- dotenv — loads .env into env vars at runtime -->
+        <dependency>
+            <groupId>io.github.cdimascio</groupId>
+            <artifactId>dotenv-java</artifactId>
+            <version>3.0.0</version>
+        </dependency>
+
           <!-- DB Connection -->
         <dependency>
     <groupId>org.postgresql</groupId>

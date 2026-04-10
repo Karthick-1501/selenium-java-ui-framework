@@ -65,9 +65,11 @@ selenium-java-ui-framework/
 │           ├── SauceDemoTest.java        ← Core checkout and cart tests
 │           ├── AddToCartTest.java        ← Multi-item cart, subtotal + tax validation
 │           └── SampleTest.java          ← Smoke test
+├── .env                                 ← secrets (gitignored — never committed)
+├── .env.example                         ← safe template committed to source control
 ├── Environment/
-│   ├── execution.properties             ← browser, base URL, retry count, DB credentials
-│   └── testdata.properties             ← credentials, item names, form data, item prices
+│   ├── execution.properties             ← browser, base URL, retry count; DB creds via ${VAR}
+│   └── testdata.properties             ← item names, form data; app creds via ${VAR}
 ├── docs/
 │   ├── architecture.md                  ← Layer responsibilities + dependency flow
 │   ├── action-engine.md                 ← Locator strategy, retry internals, why not PageFactory
@@ -95,6 +97,9 @@ selenium-java-ui-framework/
 git clone https://github.com/Karthick-1501/selenium-java-ui-framework.git
 cd selenium-java-ui-framework
 
+# copy secrets template and fill in your values
+cp .env.example .env
+
 # one browser per class — faster
 mvn test -DsuiteXmlFile=testng-classes.xml
 
@@ -106,6 +111,44 @@ Report lands at `reports/ExtentReport.html` after each run.
 
 ---
 
+## Secrets Setup
+
+Credentials and DB connection details are never stored in version-controlled files.
+They live in a `.env` file at the project root, which is gitignored.
+
+**Step 1 — copy the template:**
+```bash
+cp .env.example .env
+```
+
+**Step 2 — fill in your values:**
+```env
+# .env
+DB_URL=jdbc:postgresql://localhost:5432/at-db
+DB_USERNAME=postgres
+DB_PASSWORD=your_actual_password
+
+APP_USERNAME=standard_user
+APP_PASSWORD=your_actual_password
+
+DB_TABLE_PRODUCT=your_product_schema.your_product_table
+DB_TABLE_CLASSIFICATION=your_classification_schema.your_classification_table
+DB_TABLE_TAX=your_tax_schema.your_tax_table
+
+DB_COL_TAX_RATE=your_tax_rate_column
+DB_COL_PRODUCT_ID=your_product_id_column
+DB_COL_CLASSIFICATION_ITEM_ID=your_classification_item_id_column
+DB_COL_CLASSIFICATION_CODE=your_classification_code_column
+DB_COL_TAX_CODE=your_tax_code_column
+DB_COL_PRODUCT_NAME=your_product_name_column
+```
+
+**Step 3 — run as normal.** `ConfigManager` loads `.env` automatically at startup via `java-dotenv`.
+
+> In CI/CD, set these as environment variables in your pipeline instead of using a `.env` file. `ConfigManager` falls back to `System.getenv()` automatically.
+
+---
+
 ## Configuration
 
 `Environment/execution.properties`
@@ -114,15 +157,31 @@ browser=chrome
 base.url=https://www.saucedemo.com
 retry.count=2
 
-db.url=jdbc:postgresql://localhost:5432/at-db
-db.username=postgres
-db.password=root
+# DB connection — resolved from .env at runtime
+db.url=${DB_URL}
+db.username=${DB_USERNAME}
+db.password=${DB_PASSWORD}
+
+# DB table names — resolved from .env at runtime
+db.table.product=${DB_TABLE_PRODUCT}
+db.table.classification=${DB_TABLE_CLASSIFICATION}
+db.table.tax=${DB_TABLE_TAX}
+
+# DB column names — resolved from .env at runtime
+db.col.tax.rate=${DB_COL_TAX_RATE}
+db.col.product.id=${DB_COL_PRODUCT_ID}
+db.col.classification.item.id=${DB_COL_CLASSIFICATION_ITEM_ID}
+db.col.classification.code=${DB_COL_CLASSIFICATION_CODE}
+db.col.tax.code=${DB_COL_TAX_CODE}
+db.col.product.name=${DB_COL_PRODUCT_NAME}
 ```
 
 `Environment/testdata.properties`
 ```properties
-valid.username=standard_user
-valid.password=secret_sauce
+# App credentials resolved from .env at runtime
+valid.username=${APP_USERNAME}
+valid.password=${APP_PASSWORD}
+
 firstname=Karthick
 lastname=S
 postcode=608001
@@ -137,7 +196,7 @@ item6=Test all
 backpack.price=29.99
 ```
 
-Switching environments means editing these two files. Nothing else.
+Switching environments means updating your `.env` file (or CI env vars). The property files themselves require no edits.
 
 ---
 
@@ -216,14 +275,23 @@ Nothing outside `ActionEngine` calls `driver.findElement()`. Every interaction g
 
 ### DB-Driven Tax Validation
 
-Tax rates are not hardcoded. `TaxPage.fetchTaxPercent()` queries PostgreSQL using a JOIN across three schemas:
+Tax rates are not hardcoded. `TaxPage.fetchTaxPercent()` queries PostgreSQL using a JOIN across three schemas. Table names, schema names, and column names are **never stored in source code** — they are loaded at runtime from `.env` via `ConfigManager`, so no schema details appear in commits.
 
-```sql
-SELECT t.tx_rt
-FROM product.id_itm p
-JOIN classification.cls_cd c ON p.id_itm = c.itm_id
-JOIN tax.tx_cfg t ON c.cl_cd = t.cl_cd
-WHERE p.name = ?
+```java
+String productTable        = ConfigManager.getExecution("db.table.product");
+String classificationTable = ConfigManager.getExecution("db.table.classification");
+String taxTable            = ConfigManager.getExecution("db.table.tax");
+// column names loaded the same way ...
+
+String query = String.format("""
+    SELECT t.%s
+    FROM %s p
+    JOIN %s c ON p.%s = c.%s
+    JOIN %s t ON c.%s = t.%s
+    WHERE p.%s = ?
+""", colTaxRate, productTable, classificationTable,
+     colProductId, colClassItemId, taxTable,
+     colClassCode, colTaxCode, colProductName);
 ```
 
 The rate is returned and passed to `calculateTax()`, which uses `BigDecimal` arithmetic:
@@ -287,6 +355,7 @@ Each thread's active node is kept in `ThreadLocal<ExtentTest>` so `onTestSuccess
 | `webdrivermanager` | 5.8.0 | Automatic ChromeDriver binary management |
 | `extentreports` | 5.1.1 | HTML reporting |
 | `postgresql` | 42.7.3 | JDBC driver for DB-driven validation |
+| `dotenv-java` | 3.0.0 | Loads `.env` secrets at runtime |
 
 ---
 

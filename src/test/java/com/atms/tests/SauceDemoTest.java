@@ -19,6 +19,7 @@ public class SauceDemoTest extends BaseTest {
     private final String lastname  = ConfigManager.getTestData("lastname");
     private final String postcode  = ConfigManager.getTestData("postcode");
     private final String item1     = ConfigManager.getTestData("item1");
+    private final String item1price     = ConfigManager.getTestData("backpack.price");
 
     private final BasePage             basePage      = new BasePage();
     private final LoginPage            loginPage     = new LoginPage();
@@ -63,7 +64,7 @@ public class SauceDemoTest extends BaseTest {
         String itemPrice = overviewPage.getItemPrice();
         AssertEngine.assertDoubleEquals(
                 itemPrice.replace("$", ""),
-                Double.parseDouble(ConfigManager.getTestData("backpack.price"))
+                Double.parseDouble(item1price)
         );
 
         overviewPage.clickFinish();

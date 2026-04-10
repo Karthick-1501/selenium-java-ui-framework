@@ -10,6 +10,7 @@ import com.atms.utils.assertion.AssertEngine;
 import java.math.BigDecimal;
 import java.util.*;
 
+import org.testng.Assert;
 import org.testng.annotations.Listeners;
 import org.testng.annotations.Test;
 
@@ -38,18 +39,7 @@ public class AddToCartTest extends BaseTest {
     private final CheckoutCompletePage completePage  = new CheckoutCompletePage();
     private final TaxPage              taxPage       = new TaxPage();
 
-    @Test
-    public void addItemsToCart() {
-        basePage.launchApplication();
-        loginPage.login(username, password);
 
-        inventoryPage.addItem(item1);
-        inventoryPage.addItem(item2);
-        inventoryPage.addItem(item3);
-        inventoryPage.addItem(item4);
-        inventoryPage.addItem(item5);
-        inventoryPage.addItem(item6);
-    }
 
     @Test
     public void subtotalValidation() {
@@ -73,6 +63,11 @@ public class AddToCartTest extends BaseTest {
 
         BigDecimal uiSubtotal = overviewPage.getUISubtotal();
         AssertEngine.assertBigDecimalEquals(uiSubtotal, calculatedTotal, "Subtotal mismatch");
+        
+        overviewPage.clickFinish();
+
+        String message = completePage.getConfirmationMessage();
+        Assert.assertTrue(message.contains("Thank you"), "Order completion message not displayed");
     }
 
     @Test
@@ -93,6 +88,11 @@ public class AddToCartTest extends BaseTest {
         BigDecimal uiTax        = taxPage.getUITax();
 
         AssertEngine.assertBigDecimalEquals(uiTax, expectedTax, "Tax mismatch for single item");
+        
+        overviewPage.clickFinish();
+
+        String message = completePage.getConfirmationMessage();
+        Assert.assertTrue(message.contains("Thank you"), "Order completion message not displayed");
     }
 
     @Test
@@ -118,5 +118,10 @@ public class AddToCartTest extends BaseTest {
         BigDecimal uiTax       = taxPage.getUITax();
 
         AssertEngine.assertBigDecimalEquals(uiTax, expectedTax, "Tax mismatch for all items");
+        
+        overviewPage.clickFinish();
+
+        String message = completePage.getConfirmationMessage();
+        Assert.assertTrue(message.contains("Thank you"), "Order completion message not displayed");
     }
 }

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.*;
 
+import com.atms.config.ConfigManager;
 import com.atms.elements.InventoryElements;
 import com.atms.utils.action.ActionEngine;
 import com.atms.utils.db.DBUtils;
@@ -12,13 +13,28 @@ public class TaxPage {
 
     public double fetchTaxPercent(String itemName) {
 
-        String query = """
-            SELECT t.tx_rt
-            FROM product.id_itm p
-            JOIN classification.cls_cd c ON p.id_itm = c.itm_id
-            JOIN tax.tx_cfg t ON c.cl_cd = t.cl_cd
-            WHERE p.name = ?
-        """;
+        String productTable        = ConfigManager.getExecution("db.table.product");
+        String classificationTable = ConfigManager.getExecution("db.table.classification");
+        String taxTable            = ConfigManager.getExecution("db.table.tax");
+
+        String colTaxRate          = ConfigManager.getExecution("db.col.tax.rate");
+        String colProductId        = ConfigManager.getExecution("db.col.product.id");
+        String colClassItemId      = ConfigManager.getExecution("db.col.classification.item.id");
+        String colClassCode        = ConfigManager.getExecution("db.col.classification.code");
+        String colTaxCode          = ConfigManager.getExecution("db.col.tax.code");
+        String colProductName      = ConfigManager.getExecution("db.col.product.name");
+
+        String query = String.format("""
+            SELECT t.%s
+            FROM %s p
+            JOIN %s c ON p.%s = c.%s
+            JOIN %s t ON c.%s = t.%s
+            WHERE p.%s = ?
+        """, colTaxRate,
+             productTable,
+             classificationTable, colProductId, colClassItemId,
+             taxTable, colClassCode, colTaxCode,
+             colProductName);
 
         try (Connection conn = DBUtils.getConnection();
              PreparedStatement ps = conn.prepareStatement(query)) {
@@ -27,7 +43,7 @@ public class TaxPage {
             ResultSet rs = ps.executeQuery();
 
             if (rs.next()) {
-                return rs.getDouble("tx_rt");
+                return rs.getDouble(colTaxRate);
             }
 
         } catch (Exception e) {
