@@ -15,12 +15,13 @@ on:
         options:
           - "true"
           - "false"
-      parallel_mode:
-        description: "Parallel mode"
+      suite_type:
+        description: "Select TestNG Suite / Parallel Mode"
         required: true
-        default: "classes"
+        default: "ci"
         type: choice
         options:
+          - "ci"
           - "classes"
           - "methods"
 
@@ -30,8 +31,7 @@ jobs:
     runs-on: ubuntu-latest
 
     # Skip the job when triggered manually with run_tests = false.
-    # Push / PR triggers always run (run_tests input is not set, so the
-    # condition evaluates to true).
+    # Push / PR triggers always run (run_tests input is not set, so condition is true).
     if: ${{ github.event.inputs.run_tests != 'false' }}
 
     steps:
@@ -47,26 +47,29 @@ jobs:
           distribution: "temurin"
           cache: maven
 
-      # ── 3. Chrome (latest stable, pre-installed on ubuntu-latest) ────────────
+      # ── 3. Chrome ────────────────────────────────────────────────────────────
       - name: Verify Chrome installation
         run: google-chrome --version
 
       # ── 4. Determine TestNG suite file ───────────────────────────────────────
-      #    Push / PR → testng-ci.xml (no DB, safe for cloud runners)
-      #    Manual dispatch → testng-{classes|methods}.xml (full suite)
+      # Push / PR -> defaults to testng-ci.xml
+      # Manual -> Uses the selection from the dropdown (ci, classes, or methods)
       - name: Set suite file
         id: suite
         run: |
           EVENT="${{ github.event_name }}"
-          MODE="${{ github.event.inputs.parallel_mode }}"
+          # Get the selection from the manual input dropdown
+          SELECTED_TYPE="${{ github.event.inputs.suite_type }}"
+          
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            echo "file=testng-${MODE}.xml" >> "$GITHUB_OUTPUT"
+            echo "file=testng-${SELECTED_TYPE}.xml" >> "$GITHUB_OUTPUT"
+            echo "Selected manual suite: testng-${SELECTED_TYPE}.xml"
           else
             echo "file=testng-ci.xml" >> "$GITHUB_OUTPUT"
+            echo "Defaulting to CI suite for automated trigger"
           fi
 
       # ── 5. Run tests ─────────────────────────────────────────────────────────
-      #    Only APP_USERNAME and APP_PASSWORD needed for CI suite (no DB tests).
       - name: Run test suite
         env:
           APP_USERNAME: ${{ secrets.APP_USERNAME }}
@@ -78,7 +81,6 @@ jobs:
             --no-transfer-progress
 
       # ── 6. Upload ExtentReport ────────────────────────────────────────────────
-      #    Runs even if tests fail so the report is always available.
       - name: Upload ExtentReport
         if: always()
         uses: actions/upload-artifact@v4
