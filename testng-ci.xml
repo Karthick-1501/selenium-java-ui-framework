@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- CI suite: DB-independent tests only (no localhost PostgreSQL in CI) -->
+<suite name="UI Automation Suite" parallel="classes" thread-count="2">
+
+    <listeners>
+        <listener class-name="com.atms.reporting.TestListener"/>
+    </listeners>
+
+    <test name="CITests">
+        <classes>
+            <class name="com.atms.tests.SauceDemoTest"/>
+            <class name="com.atms.tests.AddToCartTest">
+                <methods>
+                    <include name="subtotalValidation"/>
+                </methods>
+            </class>
+        </classes>
+    </test>
+
+</suite>

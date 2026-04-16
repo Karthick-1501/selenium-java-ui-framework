@@ -51,52 +51,33 @@ jobs:
       - name: Verify Chrome installation
         run: google-chrome --version
 
-      # ── 4. Inject secrets as environment variables ───────────────────────────
-      #    ConfigManager resolves ${VAR} placeholders via dotenv → System.getenv()
-      #    No .env file is needed in CI — secrets come from GitHub Actions secrets.
-      - name: Set environment variables from secrets
-        run: echo "Environment variables will be injected in the Maven step"
-
-      # ── 5. Determine TestNG suite file ───────────────────────────────────────
-      #    Manual runs use the selected parallel_mode input.
-      #    Push / PR runs default to classes mode.
+      # ── 4. Determine TestNG suite file ───────────────────────────────────────
+      #    Push / PR → testng-ci.xml (no DB, safe for cloud runners)
+      #    Manual dispatch → testng-{classes|methods}.xml (full suite)
       - name: Set suite file
         id: suite
         run: |
+          EVENT="${{ github.event_name }}"
           MODE="${{ github.event.inputs.parallel_mode }}"
-          if [ -z "$MODE" ]; then
-            MODE="classes"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "file=testng-${MODE}.xml" >> "$GITHUB_OUTPUT"
+          else
+            echo "file=testng-ci.xml" >> "$GITHUB_OUTPUT"
           fi
-          echo "file=testng-${MODE}.xml" >> "$GITHUB_OUTPUT"
 
-      # ── 6. Run tests ─────────────────────────────────────────────────────────
+      # ── 5. Run tests ─────────────────────────────────────────────────────────
+      #    Only APP_USERNAME and APP_PASSWORD needed for CI suite (no DB tests).
       - name: Run test suite
         env:
-          # DB connection
-          DB_URL:        ${{ secrets.DB_URL }}
-          DB_USERNAME:   ${{ secrets.DB_USERNAME }}
-          DB_PASSWORD:   ${{ secrets.DB_PASSWORD }}
-          # App credentials
-          APP_USERNAME:  ${{ secrets.APP_USERNAME }}
-          APP_PASSWORD:  ${{ secrets.APP_PASSWORD }}
-          # DB table names
-          DB_TABLE_PRODUCT:        ${{ secrets.DB_TABLE_PRODUCT }}
-          DB_TABLE_CLASSIFICATION: ${{ secrets.DB_TABLE_CLASSIFICATION }}
-          DB_TABLE_TAX:            ${{ secrets.DB_TABLE_TAX }}
-          # DB column names
-          DB_COL_TAX_RATE:                ${{ secrets.DB_COL_TAX_RATE }}
-          DB_COL_PRODUCT_ID:              ${{ secrets.DB_COL_PRODUCT_ID }}
-          DB_COL_CLASSIFICATION_ITEM_ID:  ${{ secrets.DB_COL_CLASSIFICATION_ITEM_ID }}
-          DB_COL_CLASSIFICATION_CODE:     ${{ secrets.DB_COL_CLASSIFICATION_CODE }}
-          DB_COL_TAX_CODE:                ${{ secrets.DB_COL_TAX_CODE }}
-          DB_COL_PRODUCT_NAME:            ${{ secrets.DB_COL_PRODUCT_NAME }}
+          APP_USERNAME: ${{ secrets.APP_USERNAME }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
         run: |
           mvn test \
             -DsuiteXmlFile=${{ steps.suite.outputs.file }} \
             -Dheadless=true \
             --no-transfer-progress
 
-      # ── 7. Upload ExtentReport ────────────────────────────────────────────────
+      # ── 6. Upload ExtentReport ────────────────────────────────────────────────
       #    Runs even if tests fail so the report is always available.
       - name: Upload ExtentReport
         if: always()
