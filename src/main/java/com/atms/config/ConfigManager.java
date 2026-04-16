@@ -62,9 +62,12 @@ public class ConfigManager {
         while (matcher.find()) {
             String varName = matcher.group(1);
 
-            // fix first iteration: Try dotenv first (.env file locally), then OS env (GitHub Actions secrets)
-            String envVal = dotenv.get(varName, null);
-            String envValue = (envVal != null) ? envVal : System.getenv(varName);
+            // Check System.getenv() first (works in CI + locally if env is set)
+            // Fall back to dotenv (.env file for local dev)
+            String envValue = System.getenv(varName);
+            if (envValue == null) {
+                envValue = dotenv.get(varName, null);
+            }
 
             if (envValue == null) {
                 throw new RuntimeException(
@@ -76,7 +79,6 @@ public class ConfigManager {
         matcher.appendTail(resolved);
         return resolved.toString();
     }
-
     /**
      * Returns the value for a key from execution.properties.
      * JVM system properties (-Dkey=value) take precedence over the file value.
