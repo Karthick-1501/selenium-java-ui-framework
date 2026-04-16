@@ -61,7 +61,11 @@ public class ConfigManager {
         StringBuffer resolved = new StringBuffer();
         while (matcher.find()) {
             String varName = matcher.group(1);
-            String envValue = dotenv.get(varName, System.getenv(varName));
+
+            // fix first iteration: Try dotenv first (.env file locally), then OS env (GitHub Actions secrets)
+            String envVal = dotenv.get(varName, null);
+            String envValue = (envVal != null) ? envVal : System.getenv(varName);
+
             if (envValue == null) {
                 throw new RuntimeException(
                     "Environment variable '" + varName + "' is not set. " +
