@@ -1,0 +1,109 @@
+name: UI Automation Suite
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Run the test suite? (true / false)"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      parallel_mode:
+        description: "Parallel mode"
+        required: true
+        default: "classes"
+        type: choice
+        options:
+          - "classes"
+          - "methods"
+
+jobs:
+  test:
+    name: Run Selenium Suite
+    runs-on: ubuntu-latest
+
+    # Skip the job when triggered manually with run_tests = false.
+    # Push / PR triggers always run (run_tests input is not set, so the
+    # condition evaluates to true).
+    if: ${{ github.event.inputs.run_tests != 'false' }}
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Java 17 ───────────────────────────────────────────────────────────
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      # ── 3. Chrome (latest stable, pre-installed on ubuntu-latest) ────────────
+      - name: Verify Chrome installation
+        run: google-chrome --version
+
+      # ── 4. Inject secrets as environment variables ───────────────────────────
+      #    ConfigManager resolves ${VAR} placeholders via dotenv → System.getenv()
+      #    No .env file is needed in CI — secrets come from GitHub Actions secrets.
+      - name: Set environment variables from secrets
+        run: echo "Environment variables will be injected in the Maven step"
+
+      # ── 5. Determine TestNG suite file ───────────────────────────────────────
+      #    Manual runs use the selected parallel_mode input.
+      #    Push / PR runs default to classes mode.
+      - name: Set suite file
+        id: suite
+        run: |
+          MODE="${{ github.event.inputs.parallel_mode }}"
+          if [ -z "$MODE" ]; then
+            MODE="classes"
+          fi
+          echo "file=testng-${MODE}.xml" >> "$GITHUB_OUTPUT"
+
+      # ── 6. Run tests ─────────────────────────────────────────────────────────
+      - name: Run test suite
+        env:
+          # DB connection
+          DB_URL:        ${{ secrets.DB_URL }}
+          DB_USERNAME:   ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD:   ${{ secrets.DB_PASSWORD }}
+          # App credentials
+          APP_USERNAME:  ${{ secrets.APP_USERNAME }}
+          APP_PASSWORD:  ${{ secrets.APP_PASSWORD }}
+          # DB table names
+          DB_TABLE_PRODUCT:        ${{ secrets.DB_TABLE_PRODUCT }}
+          DB_TABLE_CLASSIFICATION: ${{ secrets.DB_TABLE_CLASSIFICATION }}
+          DB_TABLE_TAX:            ${{ secrets.DB_TABLE_TAX }}
+          # DB column names
+          DB_COL_TAX_RATE:                ${{ secrets.DB_COL_TAX_RATE }}
+          DB_COL_PRODUCT_ID:              ${{ secrets.DB_COL_PRODUCT_ID }}
+          DB_COL_CLASSIFICATION_ITEM_ID:  ${{ secrets.DB_COL_CLASSIFICATION_ITEM_ID }}
+          DB_COL_CLASSIFICATION_CODE:     ${{ secrets.DB_COL_CLASSIFICATION_CODE }}
+          DB_COL_TAX_CODE:                ${{ secrets.DB_COL_TAX_CODE }}
+          DB_COL_PRODUCT_NAME:            ${{ secrets.DB_COL_PRODUCT_NAME }}
+        run: |
+          mvn test \
+            -DsuiteXmlFile=${{ steps.suite.outputs.file }} \
+            -Dheadless=true \
+            --no-transfer-progress
+
+      # ── 7. Upload ExtentReport ────────────────────────────────────────────────
+      #    Runs even if tests fail so the report is always available.
+      - name: Upload ExtentReport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extent-report-${{ github.run_number }}
+          path: |
+            reports/ExtentReport.html
+            reports/screenshots/
+          retention-days: 30

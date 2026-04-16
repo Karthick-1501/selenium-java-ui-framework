@@ -2,6 +2,8 @@
 
 > Selenium · Java 17 · TestNG · Maven · ExtentReports · PostgreSQL
 
+[![UI Automation Suite](https://github.com/Karthick-1501/selenium-java-ui-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/Karthick-1501/selenium-java-ui-framework/actions/workflows/ci.yml)
+
 ---
 
 ## What This Is
@@ -17,6 +19,8 @@ The things that make this worth looking at:
 - DB-driven tax validation — tax rate fetched from PostgreSQL, computed in Java, asserted against the live UI with `BigDecimal` precision
 - `TestListener` uses `ConcurrentHashMap.computeIfAbsent()` for thread-safe class-grouped reporting
 - Everything environment-specific lives in two `.properties` files
+- GitHub Actions CI — suite runs on every push/PR; ExtentReport uploaded as a downloadable artifact after each run
+- `run_tests` workflow input — set to `false` on manual dispatch to skip execution without removing the workflow
 
 ---
 
@@ -65,6 +69,9 @@ selenium-java-ui-framework/
 │           ├── SauceDemoTest.java        ← Core checkout and cart tests
 │           ├── AddToCartTest.java        ← Multi-item cart, subtotal + tax validation
 │           └── SampleTest.java          ← Smoke test
+├── .github/
+│   └── workflows/
+│       └── ci.yml                       ← GitHub Actions — runs suite on push/PR, uploads report
 ├── .env                                 ← secrets (gitignored — never committed)
 ├── .env.example                         ← safe template committed to source control
 ├── Environment/
@@ -80,7 +87,8 @@ selenium-java-ui-framework/
 │   ├── db-layer.md                      ← DBUtils, TaxPage, schema design, tax calculation
 │   ├── page-inventory.md                ← Item map pattern, price collection, sumPrices()
 │   ├── page-checkout-overview.md        ← getUISubtotal() parsing + BigDecimal rationale
-│   └── test-add-to-cart.md              ← subtotalValidation and validateTax flows explained
+│   ├── test-add-to-cart.md              ← subtotalValidation and validateTax flows explained
+│   └── ci-cd.md                         ← GitHub Actions workflow details, secrets, report access
 ├── reports/                             ← ExtentReport.html + screenshots/ (gitignored)
 ├── testng-classes.xml                   ← parallel="classes" — one browser per class
 ├── testng-methods.xml                   ← parallel="methods" — one browser per test
@@ -154,6 +162,7 @@ DB_COL_PRODUCT_NAME=your_product_name_column
 `Environment/execution.properties`
 ```properties
 browser=chrome
+headless=false        # set to true for headless local runs; CI forces true via -Dheadless=true
 base.url=https://www.saucedemo.com
 retry.count=2
 
@@ -212,6 +221,65 @@ Switching environments means updating your `.env` file (or CI env vars). The pro
 | `AddToCartTest` | `subtotalValidation` | Collect prices from inventory DOM → sum → assert against checkout overview subtotal |
 | `AddToCartTest` | `validateTax` | Single item: fetch tax rate from DB → compute expected → assert against UI tax label |
 | `AddToCartTest` | `validateTaxAllItems` | All 6 items: same DB-driven tax validation against the full cart subtotal |
+
+---
+
+## CI/CD — GitHub Actions
+
+The workflow file lives at `.github/workflows/ci.yml`.
+
+### Triggers
+
+| Event | Behaviour |
+|-------|-----------|
+| `push` to any branch | Suite runs automatically |
+| `pull_request` to any branch | Suite runs automatically |
+| Manual (`workflow_dispatch`) | You choose whether to run and which parallel mode to use |
+
+### Manual run controls
+
+When triggering manually from the **Actions** tab you get two inputs:
+
+| Input | Options | Default | What it does |
+|-------|---------|---------|--------------|
+| `run_tests` | `true` / `false` | `true` | Set to `false` to skip execution — useful when you only want to trigger other steps or test the workflow itself |
+| `parallel_mode` | `classes` / `methods` | `classes` | Selects `testng-classes.xml` or `testng-methods.xml` |
+
+Push and PR runs always use `classes` mode.
+
+### What the workflow does
+
+1. Checks out the repo
+2. Sets up Java 17 (Temurin) with Maven cache
+3. Verifies Chrome is installed on the runner
+4. Injects all GitHub Actions secrets as environment variables — `ConfigManager` picks them up automatically, no `.env` file needed in CI
+5. Runs `mvn test -DsuiteXmlFile=<selected> -Dheadless=true`
+6. Uploads `reports/ExtentReport.html` + `reports/screenshots/` as a workflow artifact (retained 30 days), even if tests fail
+
+### Accessing the report
+
+After a run: **Actions → select the run → Artifacts → `extent-report-<run-number>`** → download the zip and open `ExtentReport.html` in a browser.
+
+### GitHub Actions secrets to configure
+
+Go to **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+| Secret name | What it holds |
+|-------------|---------------|
+| `DB_URL` | Full JDBC connection string |
+| `DB_USERNAME` | Database username |
+| `DB_PASSWORD` | Database password |
+| `APP_USERNAME` | SauceDemo login username |
+| `APP_PASSWORD` | SauceDemo login password |
+| `DB_TABLE_PRODUCT` | Fully qualified product table |
+| `DB_TABLE_CLASSIFICATION` | Fully qualified classification table |
+| `DB_TABLE_TAX` | Fully qualified tax table |
+| `DB_COL_TAX_RATE` | Tax rate column name |
+| `DB_COL_PRODUCT_ID` | Product ID column name |
+| `DB_COL_CLASSIFICATION_ITEM_ID` | Classification item ID column name |
+| `DB_COL_CLASSIFICATION_CODE` | Classification code column name |
+| `DB_COL_TAX_CODE` | Tax code column name |
+| `DB_COL_PRODUCT_NAME` | Product name column name |
 
 ---
 
@@ -373,6 +441,7 @@ Each thread's active node is kept in `ThreadLocal<ExtentTest>` so `onTestSuccess
 | [`docs/page-inventory.md`](docs/page-inventory.md) | Item map pattern, price collection, sumPrices() |
 | [`docs/page-checkout-overview.md`](docs/page-checkout-overview.md) | getUISubtotal() parsing, BigDecimal rationale |
 | [`docs/test-add-to-cart.md`](docs/test-add-to-cart.md) | subtotalValidation and validateTax flows explained end to end |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | GitHub Actions workflow — triggers, secrets, artifact upload |
 
 ---
 

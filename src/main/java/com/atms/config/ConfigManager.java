@@ -13,6 +13,12 @@ import java.util.regex.Pattern;
  * Loads execution and test data configuration from the Environment/ directory.
  * Secrets are kept in a .env file and never committed to source control.
  * Property values referencing ${VAR_NAME} are resolved against the loaded env.
+ *
+ * Priority order (highest wins):
+ *   1. JVM system properties  (-Dkey=value passed via Maven)
+ *   2. Environment variables  (GitHub Actions secrets / OS env)
+ *   3. .env file              (local development)
+ *   4. execution.properties / testdata.properties
  */
 public class ConfigManager {
 
@@ -48,7 +54,7 @@ public class ConfigManager {
         }
     }
 
-    /** Resolves ${VAR_NAME} placeholders against .env / system environment. */
+    /** Resolves ${VAR_NAME} placeholders against env / .env file. */
     private static String resolve(String value) {
         if (value == null) return null;
         Matcher matcher = PLACEHOLDER.matcher(value);
@@ -59,7 +65,7 @@ public class ConfigManager {
             if (envValue == null) {
                 throw new RuntimeException(
                     "Environment variable '" + varName + "' is not set. " +
-                    "Add it to your .env file.");
+                    "Add it to your .env file or GitHub Actions secrets.");
             }
             matcher.appendReplacement(resolved, Matcher.quoteReplacement(envValue));
         }
@@ -67,16 +73,30 @@ public class ConfigManager {
         return resolved.toString();
     }
 
+    /**
+     * Returns the value for a key from execution.properties.
+     * JVM system properties (-Dkey=value) take precedence over the file value.
+     */
     public static String getExecution(String key) {
+        String sysProp = System.getProperty(key);
+        if (sysProp != null) return sysProp;
         return resolve(executionProps.getProperty(key));
     }
 
+    /**
+     * Returns the value for a key from testdata.properties.
+     * JVM system properties (-Dkey=value) take precedence over the file value.
+     */
     public static String getTestData(String key) {
+        String sysProp = System.getProperty(key);
+        if (sysProp != null) return sysProp;
         return resolve(testDataProps.getProperty(key));
     }
 
-    /** Convenience alias — checks testdata first, then execution. */
+    /** Convenience alias — checks testdata first, then execution, then system props. */
     public static String get(String key) {
+        String sysProp = System.getProperty(key);
+        if (sysProp != null) return sysProp;
         String value = testDataProps.getProperty(key);
         if (value == null) value = executionProps.getProperty(key);
         return resolve(value);
